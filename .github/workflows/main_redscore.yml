@@ -66,4 +66,4 @@ jobs:
         with:
           app-name: 'RedScore'
           slot-name: 'Production'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_7D21C16089704C188C5A676E9D0B0B60 }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_BB346165292C40EEACBC3FF46123CC16 }}
