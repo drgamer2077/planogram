@@ -3,5 +3,4 @@ roboflow
 numpy
 pandas
 openpyxl
-json
 flask
