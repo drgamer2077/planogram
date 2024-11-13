@@ -6,11 +6,12 @@ import os
 import tempfile
 import schedule
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
+import pytz
 
 # Streamlit interface
 st.title("Compliance Report Generator")
-st.write("The code will execute itself at 08:50 AM every day to generate the compliance report.")
+st.write("The code will execute itself at 08:50 AM IST every day to generate the compliance report.")
 
 # Paths
 images_folder = "Images"
@@ -165,10 +166,25 @@ def check_images_folder():
         time.sleep(10)  # Check every 10 seconds
 
 # Schedule the task
-schedule_time = "09:05"
-schedule.every().day.at(schedule_time).do(check_images_folder)
+schedule_time = "08:50"
+ist = pytz.timezone('Asia/Kolkata')
+utc = pytz.utc
+
+def run_scheduled_task():
+    now_utc = datetime.now(utc)
+    now_ist = now_utc.astimezone(ist)
+    target_time_ist = datetime.strptime(schedule_time, "%H:%M").time()
+    target_datetime_ist = datetime.combine(now_ist.date(), target_time_ist)
+    target_datetime_utc = ist.localize(target_datetime_ist).astimezone(utc)
+
+    if now_utc >= target_datetime_utc:
+        target_datetime_utc += timedelta(days=1)
+
+    delay = (target_datetime_utc - now_utc).total_seconds()
+    time.sleep(delay)
+    check_images_folder()
 
 # Run the scheduler
 while True:
-    schedule.run_pending()
+    run_scheduled_task()
     time.sleep(1)
