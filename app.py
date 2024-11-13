@@ -4,40 +4,44 @@ import json
 import roboflow
 import os
 import tempfile
+import schedule
+import time
+from datetime import datetime
 
 # Streamlit interface
 st.title("Compliance Report Generator")
+st.write("The code will execute itself at 08:50 AM every day to generate the compliance report.")
 
-# Upload folder
-uploaded_files = st.file_uploader("Upload Images", accept_multiple_files=True, type=["jpg", "jpeg", "png"])
-bev_master_file = st.file_uploader("Beverages Products Master File", type=["xlsx"])
+# Paths
+images_folder = "Images"
+bev_master_file_path = "Data/master_file.xlsx"
+json_folder = "JSON"
+report_folder = "Report"
 
 # Roboflow API key and model ID
-api_key = st.text_input("Roboflow API Key", "YxeULFmRqt8AtNbwzXrT")
-model_id = st.text_input("Roboflow Model ID", "cooler-image")
-model_version = st.text_input("Roboflow Model Version", "1")
+api_key = "YxeULFmRqt8AtNbwzXrT"
+model_id = "cooler-image"
+model_version = "1"
 
-if st.button("Generate Compliance Report"):
+def generate_compliance_report():
+    uploaded_files = [os.path.join(images_folder, file) for file in os.listdir(images_folder) if file.endswith(('jpg', 'jpeg', 'png'))]
+    bev_master_file = bev_master_file_path
+
     if not uploaded_files or not bev_master_file:
         st.error("Please upload all required files.")
     else:
-        img_names = [file.name for file in uploaded_files]
+        img_names = [os.path.basename(file) for file in uploaded_files]
         
         rf = roboflow.Roboflow(api_key=api_key)
         model = rf.workspace().project(model_id).version(model_version).model
 
-        def get_json_op(image_file):
-            with tempfile.NamedTemporaryFile(delete=False) as temp_image_file:
-                temp_image_file.write(image_file.getbuffer())
-                temp_image_path = temp_image_file.name
-            
-            predictions_response = model.predict(temp_image_path).json()  # Get the JSON response
+        def get_json_op(image_file_path):
+            predictions_response = model.predict(image_file_path).json()  # Get the JSON response
             predictions = predictions_response.get("predictions", [])
             
-            output_json_path = os.path.join(tempfile.gettempdir(), f"OP_{os.path.basename(temp_image_path)}.json")
+            output_json_path = os.path.join(json_folder, f"OP_{os.path.basename(image_file_path)}.json")
             with open(output_json_path, 'w') as json_file:
                 json.dump(predictions, json_file, indent=4)
-            os.remove(temp_image_path)
             return output_json_path
 
         json_paths = []
@@ -138,16 +142,33 @@ if st.button("Generate Compliance Report"):
         final_op = pd.merge(pack_order_check, brand_order_check, on='Image_id')
         final_op = final_op.drop(columns=['pack_order_check', 'brand_order_check'])
 
-        compliance_report_path = os.path.join(tempfile.gettempdir(), "COMPLIANCE_REPORT.xlsx")
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        compliance_report_path = os.path.join(report_folder, f"COMPLIANCE_REPORT_{current_time}.xlsx")
         with pd.ExcelWriter(compliance_report_path, engine='openpyxl') as writer:
             final_op.to_excel(writer, sheet_name='Compliance Scores', index=False)
             pack_compliance_output.to_excel(writer, sheet_name='Pack Order Compliance', index=False)
             brand_compliance_df.to_excel(writer, sheet_name='Brand Order Compliance', index=False)
 
         st.success("Compliance report generated successfully!")
-        st.download_button(
-            label="Download Compliance Report",
-            data=open(compliance_report_path, "rb").read(),
-            file_name="Compliance_Report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+
+        # Delete all images in the images folder
+        for file in uploaded_files:
+            os.remove(file)
+
+def check_images_folder():
+    while True:
+        if not os.listdir(images_folder):
+            st.warning("No images in the Images folder. Please upload images.")
+        else:
+            generate_compliance_report()
+            break
+        time.sleep(10)  # Check every 10 seconds
+
+# Schedule the task
+schedule_time = "09:05"
+schedule.every().day.at(schedule_time).do(check_images_folder)
+
+# Run the scheduler
+while True:
+    schedule.run_pending()
+    time.sleep(1)
