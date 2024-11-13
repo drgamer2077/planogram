@@ -11,13 +11,18 @@ import pytz
 
 # Streamlit interface
 st.title("Compliance Report Generator")
-st.write("The code will execute itself at 08:50 AM IST every day to generate the compliance report.")
+st.write("The code will execute itself at 03:00 AM IST every day to generate the compliance report.")
 
 # Paths
 images_folder = "Images"
 bev_master_file_path = "Data/master_file.xlsx"
 json_folder = "JSON"
 report_folder = "Report"
+
+# Create folders if they don't exist
+for folder in [images_folder, json_folder, "Data", report_folder]:
+    if not os.path.exists(folder):
+        os.makedirs(folder)
 
 # Roboflow API key and model ID
 api_key = "YxeULFmRqt8AtNbwzXrT"
@@ -166,7 +171,7 @@ def check_images_folder():
         time.sleep(10)  # Check every 10 seconds
 
 # Schedule the task
-schedule_time = "08:50"
+schedule_time = "03:00"
 ist = pytz.timezone('Asia/Kolkata')
 utc = pytz.utc
 
@@ -178,6 +183,7 @@ def run_scheduled_task():
     target_datetime_utc = ist.localize(target_datetime_ist).astimezone(utc)
 
     if now_utc >= target_datetime_utc:
+        check_images_folder()
         target_datetime_utc += timedelta(days=1)
 
     delay = (target_datetime_utc - now_utc).total_seconds()
