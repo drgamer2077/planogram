@@ -1,3 +1,7 @@
+# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
+# More GitHub Actions for Azure: https://github.com/Azure/actions
+# More info on Python, GitHub Actions, and Azure App Service: https://aka.ms/python-webapps-actions
+
 name: Build and deploy Python app to Azure Web App - RedScore
 
 on:
@@ -18,19 +22,26 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Prepare deployment directory
+      - name: Create and start virtual environment
         run: |
-          mkdir -p deploy
-          rsync -av --exclude=deploy --exclude=venv --exclude=.git . ./
+          python -m venv venv
+          source venv/bin/activate
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+        
+      # Optional: Add step to run tests here (PyTest, Django test suites, etc.)
 
-      - name: Debug deployment directory
-        run: ls -R ./
+      - name: Zip artifact for deployment
+        run: zip release.zip ./* -r
 
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
         with:
           name: python-app
-          path: ./
+          path: |
+            release.zip
+            !venv/
 
   deploy:
     runs-on: ubuntu-latest
@@ -45,13 +56,18 @@ jobs:
         with:
           name: python-app
 
-      - name: Debug downloaded files
+      - name: Unzip artifact for deployment
+        run: unzip release.zip
+
+      - name: Debug deployment directory
         run: ls -R ./
 
-      - name: Deploy to Azure Web App
+      
+      - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
           app-name: 'RedScore'
+          slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_BB346165292C40EEACBC3FF46123CC16 }}
-          package: ./
+          package: .
