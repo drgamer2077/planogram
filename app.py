@@ -11,10 +11,10 @@ import pytz
 
 # Streamlit interface
 st.title("Compliance Report Generator")
-st.write("The code will execute itself at 03:00 AM IST every day to generate the compliance report.")
+st.write("The code will execute itself at 03:00 AM IST every day to generate the compliance report!")
 
 # Paths
-images_folder = "Images"
+images_folder = "../../home/Images"
 bev_master_file_path = "Data/master_file.xlsx"
 json_folder = "JSON"
 report_folder = "Report"
