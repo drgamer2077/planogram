@@ -11,13 +11,13 @@ import pytz
 
 # Streamlit interface
 st.title("Compliance Report Generator")
-st.write("The code will execute itself at 03:00 AM IST every day to generate the compliance report!")
+st.write("This code will execute itself at 03:00 AM IST every day to generate the compliance report!")
 
 # Paths
-images_folder = "../../home/Images"
-bev_master_file_path = "Data/master_file.xlsx"
-json_folder = "JSON"
-report_folder = "Report"
+images_folder = "../../home/site/wwwroot/Images"
+bev_master_file_path = "../../home/site/wwwroot/Data/master_file.xlsx"
+json_folder = "../../home/site/wwwroot/JSON"
+report_folder = "../../home/site/wwwroot/Report"
 
 # Create folders if they don't exist
 for folder in [images_folder, json_folder, "Data", report_folder]:
