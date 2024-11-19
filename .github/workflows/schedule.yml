@@ -1,0 +1,13 @@
+name: Trigger Web App
+
+on:
+  schedule:
+    - cron: '10 22 * * *' # Runs at 10:10 PM UTC, which is 3:40 AM IST
+
+jobs:
+  trigger-web-app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Request
+        run: |
+          curl -X GET "https://redscore-fgbkhsgea6fbckf6.centralindia-01.azurewebsites.net"
