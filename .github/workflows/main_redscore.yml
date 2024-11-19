@@ -9,6 +9,8 @@ on:
     branches:
       - main
   workflow_dispatch:
+  schedule:
+    - cron: '30 22 * * *' # Runs at 10:30 PM UTC (4:00 AM IST)
 
 jobs:
   build:
@@ -59,7 +61,6 @@ jobs:
       - name: Unzip artifact for deployment
         run: unzip release.zip
 
-      
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
@@ -67,3 +68,11 @@ jobs:
           app-name: 'RedScore'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_0A044D21775646C2BD90985B913EC59A }}
+
+  trigger-web-app:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Web App
+        run: |
+          curl -X GET "https://redscore-fgbkhsgea6fbckf6.centralindia-01.azurewebsites.net"
