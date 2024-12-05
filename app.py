@@ -8,6 +8,7 @@ import schedule
 import time
 from datetime import datetime, timedelta
 import pytz
+import shutil
 
 # Streamlit interface
 st.title("Compliance Report Generator")
@@ -15,12 +16,13 @@ st.write("This code will execute itself at 03:00 AM IST every day to generate th
 
 # Paths
 images_folder = "../../home/site/wwwroot/Images"
+images_old_folder = "../../home/site/wwwroot/Images_OLD"
 bev_master_file_path = "../../home/site/wwwroot/Data/master_file.xlsx"
 json_folder = "../../home/site/wwwroot/JSON"
 report_folder = "../../home/site/wwwroot/Report"
 
 # Create folders if they don't exist
-for folder in [images_folder, json_folder, "Data", report_folder]:
+for folder in [images_folder, json_folder, "Data", report_folder, images_old_folder]:
     if not os.path.exists(folder):
         os.makedirs(folder)
 
@@ -42,17 +44,23 @@ def generate_compliance_report():
         model = rf.workspace().project(model_id).version(model_version).model
 
         def get_json_op(image_file_path):
-            predictions_response = model.predict(image_file_path).json()  # Get the JSON response
-            predictions = predictions_response.get("predictions", [])
-            
-            output_json_path = os.path.join(json_folder, f"OP_{os.path.basename(image_file_path)}.json")
-            with open(output_json_path, 'w') as json_file:
-                json.dump(predictions, json_file, indent=4)
-            return output_json_path
+            try:
+                predictions_response = model.predict(image_file_path).json()  # Get the JSON response
+                predictions = predictions_response.get("predictions", [])
+                
+                output_json_path = os.path.join(json_folder, f"OP_{os.path.basename(image_file_path)}.json")
+                with open(output_json_path, 'w') as json_file:
+                    json.dump(predictions, json_file, indent=4)
+                return output_json_path
+            except Exception as e:
+                st.error(f"Error processing image {image_file_path}: {e}")
+                return None
 
         json_paths = []
         for file in uploaded_files:
-            json_paths.append(get_json_op(file))
+            json_path = get_json_op(file)
+            if json_path:
+                json_paths.append(json_path)
 
         def size_classification(name):
             if 'small' in name.lower():
@@ -88,28 +96,34 @@ def generate_compliance_report():
         bev_master = pd.read_excel(bev_master_file)
 
         def pack_order_comp(json_img_op):
-            df = pd.read_json(json_img_op)
-            df = df.drop(columns='image_path')
-            df = df.sort_values(by=['y', 'x']).reset_index(drop=True)
-            df['Image_id'] = os.path.basename(json_img_op).strip('.json').strip('OP_')
-            
-            df['y_diff'] = df['y'].diff().fillna(0)
-            threshold = 50
-            df['new_bin'] = (df['y_diff'] > threshold).cumsum()
-            df['shelf'] = df['new_bin'].apply(lambda x: f'{x+1}')
-            df['shelf'] = df['shelf'].astype('int')
-            df.drop(columns=['y_diff', 'new_bin'], inplace=True)
-            df = df.sort_values(by=['shelf', 'x'])
-            
-            df['actual size (json op)'] = df['class'].apply(size_classification)
-            df = pd.merge(df, bev_master[['class_id', 'flavour_type']], on='class_id', how='left')
-            df['expected size'] = df['shelf'].apply(expected_shelf_op)
-            df['pack_order_check'] = df.apply(lambda row: 1 if row['actual size (json op)'] != row['expected size'] else 0, axis=1)
-            
-            return df
+            try:
+                df = pd.read_json(json_img_op)
+                df = df.drop(columns='image_path', errors='ignore')
+                df = df.sort_values(by=['y', 'x']).reset_index(drop=True)
+                df['Image_id'] = os.path.basename(json_img_op).strip('.json').strip('OP_')
+                
+                df['y_diff'] = df['y'].diff().fillna(0)
+                threshold = 50
+                df['new_bin'] = (df['y_diff'] > threshold).cumsum()
+                df['shelf'] = df['new_bin'].apply(lambda x: f'{x+1}')
+                df['shelf'] = df['shelf'].astype('int')
+                df.drop(columns=['y_diff', 'new_bin'], inplace=True)
+                df = df.sort_values(by=['shelf', 'x'])
+                
+                df['actual size (json op)'] = df['class'].apply(size_classification)
+                df = pd.merge(df, bev_master[['class_id', 'flavour_type']], on='class_id', how='left')
+                df['expected size'] = df['shelf'].apply(expected_shelf_op)
+                df['pack_order_check'] = df.apply(lambda row: 1 if row['actual size (json op)'] != row['expected size'] else 0, axis=1)
+                
+                return df
+            except Exception as e:
+                st.error(f"Error processing JSON {json_img_op}: {str(e)}")
+                return pd.DataFrame()
 
         def brand_order_comp(json_img_op):
             poc_op = pack_order_comp(json_img_op)
+            if poc_op.empty:
+                return pd.DataFrame()
             shelf_flavour_mapping = poc_op.groupby('shelf')['flavour_type'].apply(list).to_dict()
             comparison_result = []
             for shelf, flavours in shelf_flavour_mapping.items():
@@ -130,14 +144,12 @@ def generate_compliance_report():
 
         for json_path in json_paths:
             output_df = pack_order_comp(json_path)
-            pack_compliance_output = pd.concat([pack_compliance_output, output_df], ignore_index=True)
-            pack_compliance_output = pack_compliance_output[['Image_id', 'x', 'y', 'width', 'height', 'confidence', 'class', 'class_id',
-                                                             'detection_id', 'prediction_type', 'shelf',
-                                                             'actual size (json op)', 'flavour_type', 'expected size', 'pack_order_check']]
+            if not output_df.empty:
+                pack_compliance_output = pd.concat([pack_compliance_output, output_df], ignore_index=True)
 
             brand_output_df = brand_order_comp(json_path)
-            brand_compliance_df = pd.concat([brand_compliance_df, brand_output_df], ignore_index=True)
-            brand_compliance_df = brand_compliance_df[['Image_id', 'Shelf', 'Flavour List', 'Ideal Order', 'brand_order_check']]
+            if not brand_output_df.empty:
+                brand_compliance_df = pd.concat([brand_compliance_df, brand_output_df], ignore_index=True)
 
         pack_order_check = pd.DataFrame(pack_compliance_output.groupby('Image_id')['pack_order_check'].sum().reset_index())
         pack_order_check['pack_order_score'] = pack_order_check.apply(lambda row: 0 if row['pack_order_check'] > 0 else 2, axis=1)
@@ -145,8 +157,7 @@ def generate_compliance_report():
         brand_order_check = pd.DataFrame(brand_compliance_df.groupby('Image_id')['brand_order_check'].sum().reset_index())
         brand_order_check['brand_order_score'] = brand_order_check.apply(lambda row: 3 if row['brand_order_check'] == 5 else 0, axis=1)
 
-        final_op = pd.merge(pack_order_check, brand_order_check, on='Image_id')
-        final_op = final_op.drop(columns=['pack_order_check', 'brand_order_check'])
+        final_op = pd.merge(pack_order_check, brand_order_check, on='Image_id', how='outer').fillna(0)
 
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         compliance_report_path = os.path.join(report_folder, f"COMPLIANCE_REPORT_{current_time}.xlsx")
@@ -158,8 +169,15 @@ def generate_compliance_report():
         st.success("Compliance report generated successfully!")
 
         # Delete all images in the images folder
+        #for file in uploaded_files:
+        #    os.remove(file)
+	
+	# Move all images to Images_OLD folder
         for file in uploaded_files:
-            os.remove(file)
+            try:
+                shutil.move(file, os.path.join(images_old_folder, os.path.basename(file)))
+            except Exception as e:
+                st.warning(f"Could not move file {file} to {images_old_folder}: {e}")
 
 def check_images_folder():
     while True:
