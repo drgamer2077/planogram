@@ -11,7 +11,7 @@ import pytz
 import shutil
 
 # Streamlit interface
-st.title("Compliance Report Generator")
+st.title("Compliance Report Generator!")
 st.write("This code will execute itself at 03:00 AM IST every day to generate the compliance report!")
 
 # Paths
@@ -30,6 +30,43 @@ for folder in [images_folder, json_folder, "Data", report_folder, images_old_fol
 api_key = "YxeULFmRqt8AtNbwzXrT"
 model_id = "cooler-image"
 model_version = "1"
+
+def populate_outlet_data(report_df, outlet_master_folder):
+    # Columns to fill
+    columns_to_fill = {
+        "OTYP": "MainChannelType",
+        "OUTLET_NM": "OutletName",
+        "ASM": "ASM_Name",
+        "SE": "RSE_Name",
+        "PSR": "PSR_Desc"
+    }
+
+    # Initialize the columns to blank if not already done
+    for col in columns_to_fill.keys():
+        if col not in report_df.columns:
+            report_df[col] = ''
+
+    # Get all OutletMaster_*.csv files
+    outlet_master_files = [f for f in os.listdir(outlet_master_folder) if f.startswith("OutletMaster_") and f.endswith(".csv")]
+
+    # Iterate over all OutletMaster files to populate data
+    outlet_master_combined = pd.DataFrame()
+    for file in outlet_master_files:
+        file_path = os.path.join(outlet_master_folder, file)
+        try:
+            temp_df = pd.read_csv(file_path, usecols=["Outletid"] + list(columns_to_fill.values()))
+            outlet_master_combined = pd.concat([outlet_master_combined, temp_df], ignore_index=True)
+        except Exception as e:
+            st.error(f"Error reading file {file}: {e}")
+
+    # Ensure unique Outletid values
+    outlet_master_combined.drop_duplicates(subset='Outletid', inplace=True)
+
+    # Map each column based on OUTLET CODE and Outletid
+    for report_col, master_col in columns_to_fill.items():
+        report_df[report_col] = report_df['OUTLET CODE'].map(outlet_master_combined.set_index('Outletid')[master_col])
+
+    return report_df
 
 def generate_compliance_report():
     uploaded_files = [os.path.join(images_folder, file) for file in os.listdir(images_folder) if file.endswith(('jpg', 'jpeg', 'png'))]
@@ -159,6 +196,37 @@ def generate_compliance_report():
 
         final_op = pd.merge(pack_order_check, brand_order_check, on='Image_id', how='outer').fillna(0)
 
+        # Add new columns
+        final_op['MONTH'] = datetime.now().strftime("%B")
+        final_op['OTYP'] = ''
+        final_op['OUTLET_NM'] = ''
+        final_op['DL1_ADD1'] = ''
+        final_op['VPO_CLASS'] = ''
+        final_op['OUTLET CODE'] = final_op['Image_id'].apply(lambda x: x.split('_')[0])
+        final_op['SM'] = ''
+        final_op['ASM'] = ''
+        final_op['SE'] = ''
+        final_op['PSR'] = ''
+        final_op['RT'] = ''
+        final_op['Visible_Accessible_RCS'] = 0
+        final_op['Purity_RCS'] = 0
+        final_op['Chilled_UF_Scoring_RCS'] = 0
+        final_op['Brand_Order_Compliance_Check'] = final_op['brand_order_check']
+        final_op['Brand_Order_Compliance_RCS'] = final_op['brand_order_score']
+        final_op['Pack_Order_Compliance_Test'] = final_op['pack_order_check']
+        final_op['Pack_Order_Compliance_RCS'] = final_op['pack_order_score']
+        final_op['Total_Equipment_Score'] = final_op[['Visible_Accessible_RCS', 'Purity_RCS', 'Chilled_UF_Scoring_RCS', 'Brand_Order_Compliance_RCS', 'Pack_Order_Compliance_RCS']].sum(axis=1)
+
+        # Populate OTYP, OUTLET_NM, ASM, SE, and PSR using OutletMaster files
+        final_op = populate_outlet_data(final_op, report_folder)
+
+        # Reorder columns
+        final_op = final_op[['MONTH', 'OTYP', 'OUTLET_NM', 'DL1_ADD1', 'VPO_CLASS', 'OUTLET CODE', 'SM', 'ASM', 'SE', 'PSR', 'RT', 
+                             'Visible_Accessible_RCS', 'Purity_RCS', 'Chilled_UF_Scoring_RCS', 'Brand_Order_Compliance_Check',
+                             'Brand_Order_Compliance_RCS', 'Pack_Order_Compliance_Test', 'Pack_Order_Compliance_RCS', 
+                             'Total_Equipment_Score']]
+
+        # Save to Excel
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         compliance_report_path = os.path.join(report_folder, f"COMPLIANCE_REPORT_{current_time}.xlsx")
         with pd.ExcelWriter(compliance_report_path, engine='openpyxl') as writer:
@@ -166,13 +234,10 @@ def generate_compliance_report():
             pack_compliance_output.to_excel(writer, sheet_name='Pack Order Compliance', index=False)
             brand_compliance_df.to_excel(writer, sheet_name='Brand Order Compliance', index=False)
 
+
         st.success("Compliance report generated successfully!")
 
-        # Delete all images in the images folder
-        #for file in uploaded_files:
-        #    os.remove(file)
-	
-	# Move all images to Images_OLD folder
+        # Move all images to Images_OLD folder
         for file in uploaded_files:
             try:
                 shutil.move(file, os.path.join(images_old_folder, os.path.basename(file)))
