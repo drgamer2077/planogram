@@ -11,7 +11,7 @@ import pytz
 import shutil
 
 # Streamlit interface
-st.title("Compliance Report Generator!!!")
+st.title("Compliance Report Generator")
 st.write("This code will execute itself at 03:00 AM IST every day to generate the compliance report!")
 
 # Paths
@@ -42,6 +42,55 @@ def calculate_chilled_uf_score(pack_compliance_output):
         chilled_scores[image_id] = len(unique_matches)
     
     return pd.Series(chilled_scores)
+
+def calculate_purity_rcs(pack_compliance_output):
+    keywords = ["Pepsi", "Mountain", "7up", "Slice", "Sting"]
+    purity_scores = {}
+
+    for image_id in pack_compliance_output['Image_id'].unique():
+        image_data = pack_compliance_output[pack_compliance_output['Image_id'] == image_id]
+
+        # Top shelves (shelf 1 and 2)
+        top_shelves_data = image_data[image_data['shelf'].isin([1, 2])]
+        total_top_shelves = len(top_shelves_data)
+        if total_top_shelves > 0:
+            top_keywords_count = top_shelves_data['class'].str.startswith(tuple(keywords)).sum()
+            top_percentage = (top_keywords_count / total_top_shelves) * 100
+            if top_percentage == 0:
+                top_points = 10
+            elif top_percentage < 10:
+                top_points = 8
+            else:
+                top_points = 0
+        else:
+            top_points = 0
+
+        # Other shelves (shelf > 2)
+        other_shelves_data = image_data[image_data['shelf'] > 2]
+        total_other_shelves = len(other_shelves_data)
+        if total_other_shelves > 0:
+            other_keywords_count = other_shelves_data['class'].str.startswith(tuple(keywords)).sum()
+            other_percentage = (other_keywords_count / total_other_shelves) * 100
+
+            if 30 <= other_percentage <= 35:
+                other_points = 1
+            elif 26 <= other_percentage <= 29:
+                other_points = 2
+            elif 20 <= other_percentage <= 25:
+                other_points = 3
+            elif 15 <= other_percentage <= 19:
+                other_points = 4
+            elif other_percentage <= 14:
+                other_points = 5
+            else:
+                other_points = 0
+        else:
+            other_points = 0
+
+        # Total Purity_RCS score for this Image_id
+        purity_scores[image_id] = top_points + other_points
+
+    return pd.Series(purity_scores)
 
 def populate_outlet_data(report_df, outlet_master_folder):
     columns_to_fill = {
@@ -211,6 +260,10 @@ def generate_compliance_report():
     # Calculate Chilled_UF_Scoring_RCS
     chilled_scores = calculate_chilled_uf_score(pack_compliance_output)
     final_op['Chilled_UF_Scoring_RCS'] = final_op['Image_id'].map(chilled_scores)
+
+    # Calculate Purity_RCS scores and map them to the final DataFrame
+    purity_scores = calculate_purity_rcs(pack_compliance_output)
+    final_op['Purity_RCS'] = final_op['Image_id'].map(purity_scores)
     
     # Add new columns
     final_op['MONTH'] = datetime.now().strftime("%B")
@@ -225,7 +278,7 @@ def generate_compliance_report():
     final_op['PSR'] = ''
     final_op['RT'] = ''
     final_op['Visible_Accessible_RCS'] = 0
-    final_op['Purity_RCS'] = 0
+    #final_op['Purity_RCS'] = 0
     final_op['Brand_Order_Compliance_Check'] = final_op['brand_order_check']
     final_op['Brand_Order_Compliance_RCS'] = final_op['brand_order_score']
     final_op['Pack_Order_Compliance_Test'] = final_op['pack_order_check']
